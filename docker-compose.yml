@@ -1,0 +1,28 @@
+services:
+  executor:
+    build:
+      context: ./executor
+    ports:
+      - "8000:8000"
+    networks:
+      - agent-network
+    # 万が一暴走した際の安全装置
+    mem_limit: 512m
+    cpus: 1.0
+
+  orchestrator:
+    build:
+      context: ./orchestrator
+    environment:
+      # Windowsホスト側で動くOllama等のAPIアドレスを指定
+      - LLM_API_BASE=http://host.docker.internal:11434
+    depends_on:
+      - executor
+    networks:
+      - agent-network
+    # コンテナ起動時にLangGraphを実行
+    command: ["python", "app.py"]
+
+networks:
+  agent-network:
+    driver: bridge
