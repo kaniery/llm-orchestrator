@@ -19,6 +19,7 @@ services:
   #     - executor
   #   networks:
   #     - agent-network
+
   tester:
     build:
       context: ./tester
@@ -34,6 +35,11 @@ services:
       - "host.docker.internal:host-gateway"
     command: ["python", "app.py"]
 
+  # prototype:
+  #   build:
+  #     context: ./protype
+
+  #   command: ["python", "app.py"]
 # networks:
 #   agent-network:
 #     driver: bridge

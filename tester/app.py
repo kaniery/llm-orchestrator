@@ -2,6 +2,7 @@ import os
 import sys
 import boto3
 import requests
+import re
 
 # 1. 環境変数の読み込み（設定漏れがあればエラーを吐いて落とす安全設計）
 AWS_REGION = os.environ.get("AWS_REGION")
@@ -16,7 +17,7 @@ if not all([AWS_REGION, KB_ID, OLLAMA_BASE, MODEL_NAME]):
 OLLAMA_URL = f"{OLLAMA_BASE}/api/generate"
 
 def run_hybrid_rag():
-    query = "私の名前は？"
+    query = "Please write a Python macro that presses the Windows key, types “notepad,” and, once Notepad launches, types “Hello” into Notepad.                 "  # ここにユーザーからの質問を入れる
     print(f"🧐 ユーザーからの質問: {query}")
 
     # 2. AWS Bedrock Knowledge Base から関連コンテキストを検索（Retrieve）
@@ -61,26 +62,54 @@ def run_hybrid_rag():
 
     print(f"🚀 ローカルLLM ({MODEL_NAME}) で回答を生成中...")
     try:
+        import json # ファイルの先頭になければ追加してください
+        
         res = requests.post(
             OLLAMA_URL, 
             json={
                 "model": MODEL_NAME,
                 "prompt": prompt,
-                "stream": False  # 今回は検証用のため一括で取得
+                "stream": True  # ★ここを True に変更
             },
-            timeout=90  # ローカルの推論速度に合わせてタイムアウトを長めに設定
+            stream=True,     # ★requests側のストリーミングも有効化
+            timeout=300      # ★最初の1文字目が出るまでの待機時間を長めに（300秒）
         )
         
         if res.status_code == 200:
-            answer = res.json().get('response', '')
-            print("\n✨ --- [ローカルAIからの最終回答] --- ✨")
-            print(answer)
-            print("---------------------------------------")
-        else:
-            print(f"❌ Ollamaエラー: Status Code {res.status_code} - {res.text}")
+            print("\n✨ --- [ローカルAIからの最終回答] --- ✨\n")
             
-    except Exception as e:
-        print(f"❌ Ollamaとの通信に失敗しました (URL: {OLLAMA_URL}): {e}")
+            full_response = "" # ★AIの回答をすべて結合するための変数
+            
+            # ストリーミングで返ってくるデータを1行ずつ読み込んで表示
+            for line in res.iter_lines():
+                if line:
+                    chunk = json.loads(line)
+                    text_chunk = chunk.get("response", "")
+                    
+                    # 画面にリアルタイム出力
+                    print(text_chunk, end="", flush=True)
+                    
+                    # 変数にも蓄積していく
+                    full_response += text_chunk
+                    
+            print("\n\n---------------------------------------")
+            
+            # ★ ここから追加：マークダウンのコードブロックだけを抽出してファイル保存
+            # "```python" から "```" までの間にある文字列を抜き出す
+            code_match = re.search(r'```python\n(.*?)\n```', full_response, re.DOTALL)
+            
+            if code_match:
+                extracted_code = code_match.group(1)
+                
+                # generated_macro.py として同じ階層に保存
+                with open("generated_macro.py", "w", encoding="utf-8") as f:
+                    f.write(extracted_code)
+                print("✅ 実行用マクロ (generated_macro.py) を自動保存しました！")
+            else:
+                print("⚠️ コードブロック (```python ... ```) が見つからなかったため、保存をスキップしました。")
+
+        else:
+            print(f"\n❌ Ollamaエラー: Status Code {res.status_code} - {res.text}")
 
 if __name__ == "__main__":
     run_hybrid_rag()
